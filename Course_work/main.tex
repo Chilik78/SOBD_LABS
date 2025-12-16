@@ -1,0 +1,59 @@
+\documentclass[a4paper,14pt,oneside,openany]{memoir}
+
+% ===== Настройки и вспомогательные пакеты =====
+\usepackage{coursework}  % включает fontspec, polyglossia, biblatex и шрифты
+\usepackage{csquotes}    % для корректной работы biblatex
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage{float}
+\usepackage{indentfirst}
+\usepackage{setspace}
+\usepackage{caption}
+\usepackage{tocloft}
+\usepackage{ragged2e}
+
+\begin{document}
+
+% ========== Титульный лист ==========
+\input{content/title}
+\maketitlepage
+
+% ========== Оглавление ==========
+\renewcommand{\contentsname}{Содержание}
+\tableofcontents*
+\addtocontents{toc}{\vspace{1\baselineskip}}
+\clearpage
+
+\justifying
+
+% ========== Введение ==========
+\chapter*{Введение}
+\addcontentsline{toc}{chapter}{\MakeUppercase{Введение}}
+\input{content/introduction}
+
+% ========== Основные главы ==========
+\input{content/chapter1}
+\input{content/chapter2}
+
+% ========== Заключение ==========
+\chapter*{Заключение}
+\addcontentsline{toc}{chapter}{\MakeUppercase{Заключение}}
+\input{content/conclusion}
+
+% ========== Список литературы ==========
+\clearpage
+\printbibliography[heading=bibintoc]
+
+% ========== Приложения ==========
+\appendix
+\renewcommand*{\printchaptername}{\MakeUppercase{\appendixname}}
+\renewcommand*{\afterchapternum}{\centering\par\nobreak\vskip \midchapskip}
+\renewcommand*{\printchapternum}{\chapnumfont \thechapter}
+\renewcommand\thechapter{\Asbuk{chapter}}
+\renewcommand*{\printchaptertitle}[1]{\chaptitlefont #1}
+
+\input{content/appendix}
+
+\end{document}

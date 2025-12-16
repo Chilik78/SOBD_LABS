@@ -1,0 +1,272 @@
+
+% Содержание первой главы
+
+\chapter{\MakeUppercase{Разведочный анализ данных с использованием PySpark}}\label{ch:first}
+
+\section{Постановка задачи разведочного анализа}\vspace{\baselineskip}
+
+Разведочный анализ данных (Exploratory Data Analysis, EDA) является ключевым этапом при работе с большими данными \cite{karau2015spark, damji2020learning, koirala2020pyspark} и определяет качество последующих шагов — очистки, трансформации и моделирования. Целью данной главы является проведение комплексного EDA большого набора данных о книгах и пользовательских отзывах с использованием возможностей фреймворка Apache Spark.
+
+Для исследования применяются распределённые вычисления, что позволяет эффективно обрабатывать миллионы записей \cite{white2013hadoop, spark2022official} и анализировать данные в условиях ограничений по памяти и времени. Использование PySpark обеспечивает масштабируемость, а интеграция с HDFS — удобство работы с большими объёмами данных.
+
+Основные задачи разведочного анализа заключаются в следующем:
+
+\begin{itemize}
+\item загрузка данных из распределённой файловой системы HDFS и формирование единого датафрейма;
+\item исследование структуры, схемы и качества данных;
+\item выявление пропусков, дубликатов и некорректных значений;
+\item преобразование типов данных и создание производных признаков;
+\item предварительная оценка распределений количественных признаков и анализа категориальных данных;
+\item подготовка очищенного и структурированного набора данных для последующего применения алгоритмов машинного обучения.
+\end{itemize}
+
+Результатом данного этапа является построение целостного представления о данных и формирование корректной основы для дальнейших шагов анализа и моделирования.
+
+\vspace{\baselineskip}
+
+\section{Описание исходного датасета}\vspace{\baselineskip}
+
+В работе используется датасет <<eCommerce behavior data from multi category store>>, доступный на платформе Kaggle \cite{kaggle2023dataset}. Набор данных состоит из одного датасета — 2019-Nov.csv. В дальнейшем его название измениться на dataset.csv
+
+Совокупный объём данных составляет более 67 миллионов строк. Загруженные данные изначально имеют строковые типы, разнородные форматы идентификаторов и включают большое количество текстовых полей.
+
+Датафрейм включает следующие ключевые признаки (таблица \ref{tab:features}):
+
+\begin{table}[H]
+    \centering
+    \begin{tabularx}{\textwidth}{|X|X|}
+        \hline
+        Признак & Описание \\
+        \hline
+        event\_time & Время, когда произошло событие (UTC). \\
+        \hline
+        event\_type & Вид события. \\
+        \hline
+        product\_id & Идентификатор продукта. \\
+        \hline
+        category\_id & Идентификатор категории продукта. \\
+        \hline
+        category\_code & Таксономия категории товара (кодовое название), если это было возможно. Обычно указывается для значимых категорий и пропускается для различных видов аксессуаров. \\
+        \hline
+        brand & Строка с названием бренда. \\
+        \hline
+        price & Цена продукта. \\
+        \hline
+        user\_id & Идентификатор пользователя. \\
+        \hline
+    \end{tabularx}
+    \caption{Описание признаков датасета}
+    \label{tab:features}
+\end{table}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{Content/Images/Analyze/ExampleData.png}
+    \caption{Данные из датасета}
+    \label{fig:ExampleData}
+\end{figure}
+
+В ходе анализа полей датасета, с помощью команды \texttt{df.select()} были использованы следующие поля: \texttt{event\_type}, \texttt{product\_id}, \texttt{category\_id}, \texttt{category\_code}, \texttt{brand}, \texttt{price}.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{Content/Images/Analyze/ExampleDataAfterSelect.png}
+    \caption{Данные из датасета после select}
+    \label{fig:ExampleData}
+\end{figure}
+
+Структура данных была изучена с использованием команды \\ \texttt{df.printSchema()}, что позволило определить типы полей и выявить их потенциальную неоднородность. Так, поля \texttt{event\_type}, \texttt{product\_id}, \texttt{category\_id}, \texttt{category\_code}, \texttt{brand}, \texttt{price} и текстовые поля загружаются как строки, что указывает на возможное наличие разнородных форматов данных. Структура представлена на рисунке \ref{fig:DataFrameScheme}.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics{Content/Images/Analyze/DataFrameScheme.png}
+    \caption{Структура таблицы после загрузки данных}
+    \label{fig:DataFrameScheme}
+\end{figure}
+
+Более детальное изучение содержимого выполнялось уже на этапе разведочного анализа при помощи выборочного просмотра записей \texttt{df.show()}, анализа уникальных значений и регулярных выражений. Эти методы позволили установить, что:
+
+\begin{itemize}
+\item числовые идентификаторы различной длины (от 6 до 8 цифр);
+\item category\_id имеет длинные числовые идентификаторы (19-20 цифр);
+\item только одно значение view во всех строках выборки;
+\item множество значений NULL;
+\item значительный разброс цен (от бюджетных товаров до премиальных);
+\item числовые значения с двумя десятичными знаками.
+\end{itemize}
+
+Параметры Spark-сессии были настроены с учётом объёма данных \cite{karau2015spark, damji2020learning}: увеличены объёмы памяти драйвера и исполнителей. Это обеспечивает стабильную работу при чтении и трансформации больших датафреймов. На рисунке \ref{fig:SparkSession} показана конфигурация SparkSession.
+
+В конфиге, указанном ниже, последние строчки указывают на то, что используется hadoop:
+
+\begin{code}
+def create_spark_configuration() -> SparkConf:
+    """
+    Создает и конфигурирует экземпляр SparkConf для приложения Spark.
+
+    Returns:
+        SparkConf: Настроенный экземпляр SparkConf.
+    """
+    # Получаем имя пользователя
+    user_name = "dchel"
+    
+    conf = SparkConf()
+    conf.setAppName("Lab 1")
+    conf.setMaster("local[*]")
+    conf.set("spark.submit.deployMode", "client")
+    conf.set("spark.executor.memory", "12g")
+    conf.set("spark.executor.cores", "8")
+    conf.set("spark.executor.instances", "2")
+    conf.set("spark.driver.memory", "4g")
+    conf.set("spark.driver.cores", "2")
+    conf.set("spark.sql.catalog.spark_catalog.type", "hadoop")
+    conf.set("spark.sql.catalog.spark_catalog.warehouse", f"hdfs:///user/{user_name}")
+    conf.set("spark.sql.catalog.spark_catalog.io-impl", "org.apache.iceberg.hadoop.HadoopFileIO")
+
+    return conf
+\end{code}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=.6\textwidth]{Content/Images/Analyze/SparkSession.png}
+    \caption{Демонстрация работы сессии Spark}
+    \label{fig:SparkSession}
+\end{figure}
+
+Также для работы с датасетом, он был предварительно загружен в hdfs. Обзор директории представлен на рисунке \ref{fig:DatasetInHadoop}.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{Content/Images/Analyze/DatasetInHadoop.png}
+    \caption{Директория с данными для работы}
+    \label{fig:DatasetInHadoop}
+\end{figure}
+
+\vspace{\baselineskip}
+
+\section{Определение пропущенных значений и преобразование данных}\vspace{\baselineskip}
+
+Анализ полноты данных показал наличие пропусков в ряде столбцов, преимущественно в текстовых полях. Для оценки количества пропусков была использована служебная функция, выполняющая подсчёт \texttt{NULL}-значений в каждом столбце.
+
+Были применены следующие стратегии:
+
+\begin{itemize}
+\item удалены строки содержащие \texttt{NULL}-значения в столбцах \texttt{category\_code} и \texttt{brand};
+\item текстовый столбец \texttt{category\_id} был удален с помощью команды \texttt{df.drop("category\_id")}.
+\end{itemize}
+
+После очистки структура данных была расширена и дополнена новыми признаками. В частности, выполнено преобразование типов:
+
+\begin{itemize}
+\item численный перевод идентификаторов продуктов (\texttt{product\_id});
+\item перевод кодов категории в массив строк (\texttt{category\_code});
+\item численный перевод цены (\texttt{price}).
+\end{itemize}
+
+Дополнительно созданы следующие производные признаки:
+
+\begin{itemize}
+\item массив кодов категорий, полученный путём разбиения строки с использованием \texttt{split};
+\item признак содержания вида продукта \texttt{contains\_appliances}, \texttt{contains\_computers}, \texttt{contains\_electronics}, \texttt{contains\_kitchen}, \texttt{contains\_smartphone};
+\item булевый признак дороговизны продукта \texttt{is\_expensive};
+\item булевый признак бюджетного продукта \texttt{is\_budget};
+\item булевый признак среднебюджетного продукта \texttt{is\_mid\_range};
+\item кол-во категорий, которые охватывают продукт \texttt{category\_count};
+\item булевый признак просмотра продукта \texttt{is\_view};
+\item булевый признак добавление продукта в корзину \texttt{is\_cart};
+\item булевый признак покупки продукта \texttt{is\_purchase};
+\item класс продукта \texttt{price\_range};
+\item класс продукта в численном формате \texttt{price\_range\_numeric}.
+\end{itemize}
+
+Результаты продемонстрированы на рисунках \ref{fig:SchemeAfterProcessing1} и \ref{fig:ExampleDataAfterProcessing}.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.5\textwidth]{Content/Images/Analyze/SchemeAfterProcessing.png}
+    \caption{Структура таблицы после обработки данных}
+    \label{fig:SchemeAfterProcessing1}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\textwidth]{Content/Images/Analyze/ExampleDataAfterProcessing.png}
+    \caption{Фрагмент данных после обработки}
+    \label{fig:ExampleDataAfterProcessing}
+\end{figure}
+
+Все преобразования были объединены в функцию, позволяющую повторно применять трансформации к датафрейму. См. Приложение \ref{app:transform_data}.
+
+
+\vspace{\baselineskip}
+
+\section{Анализ распределений, выбросов и категориальных признаков}\vspace{\baselineskip}
+
+Для количественного признака \texttt{price}, была построена гистограмма с использованием Spark и последующей визуализацией в библиотеках Seaborn и Matplotlib.
+
+Полученные результаты показывают:
+
+\begin{itemize}
+\item оценки пользователей смещены в сторону высоких значений (мода 4–5) (\ref{fig:PriceField});
+\item коэффициент полезности характеризуется бимодальным распределением, что отражает различия между отзывами без оценивания полезности и отзывами с активным пользовательским голосованием (\ref{fig:HelpfulnessRatioGist}).
+\end{itemize}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1.05\textwidth]{Content/Images/Analyze/PriceField.png}
+    \caption{Гистограмма распределения для price}
+    \label{fig:PriceField}
+\end{figure}
+
+На рисунках \ref{fig:PriceAnomaly1}, \ref{fig:PriceAnomaly2} продемонстрировано распределение аномальных значений у price.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\textwidth]{Content/Images/Analyze/PriceAnomaly1.png}
+    \caption{Пример аномалий у price}
+    \label{fig:PriceAnomaly1}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\textwidth]{Content/Images/Analyze/PriceAnomaly2.png}
+    \caption{Расчетные значения у price}
+    \label{fig:PriceAnomaly2}
+\end{figure}
+
+Для категориальных признаков \texttt{category\_code}, \texttt{brand} были проанализированы частоты встречаемости. Самым популярным значением:
+\begin{itemize}
+\item \texttt{brand} стало samsung (рис. \ref{fig:BrandCategoriesHist});
+\item \texttt{category\_code} стало electronics (рис. \ref{fig:CategoryCodeHist}).
+\end{itemize} 
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\textwidth]{Content/Images/Analyze/BrandCategoriesHist.png}
+    \caption{Частоты для brand}
+    \label{fig:BrandCategoriesHist}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\textwidth]{Content/Images/Analyze/CategoryCodeHist.png}
+    \caption{Частоты для category\_code}
+    \label{fig:CategoryCodeHist}
+\end{figure}
+
+Проверка дубликатов показала, что некоторые товары имеют повторяющиеся записи — это связано с тем, что каждая запись соответствует отдельному пользовательскому действию. Такие дубликаты являются ожидаемыми и отражают структуру исходного набора данных. Поэтому для всего датасета была проведена дедубликация по \texttt{product\_id}, \texttt{event\_type} и \texttt{price} полям.
+
+\vspace{\baselineskip}
+
+\section{Выводы}\vspace{\baselineskip}
+
+В ходе проведённого разведочного анализа был сформирован целостный и очищенный набор данных, готовый для применения алгоритмов машинного обучения. Основными результатами являются:
+
+\begin{itemize}
+\item выполнена загрузка и объединение данных из HDFS средствами Apache Spark;
+\item исследована структура данных, выявлены и обработаны пропуски и аномалии;
+\item нормализованы текстовые поля и преобразованы числовые, бинарные признаки;
+\item сформированы новые признаки, повышающие информативность данных;
+\item проведён анализ распределений и выбросов в количественных характеристиках;
+\item выявлены особенности набора данных, связанные с дублированием записей по идентификатору продукта.
+\end{itemize}

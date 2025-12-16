@@ -1,0 +1,44 @@
+% Здесь пишется содержание приложений
+%
+\chapter{Обработка данных}
+\label{app:transform_data}\vspace{\baselineskip}
+
+\begin{code}
+def transform_dataframe(data: DataFrame) -> DataFrame:
+    df = df.select(
+        "event_type", "product_id", "category_id", "category_code", "brand", "price"
+    )
+    data = data.withColumn("category_id", col("category_id").cast("Integer"))
+    data = data.withColumn("product_id", col("product_id").cast("Integer"))
+    data = data.withColumn("price", col("price").cast("Float"))
+    # Преобразуем строку в массив строк
+    data = data.withColumn("category_code", 
+                            split(col("category_code"), r"\.")
+                          )
+    data = data.dropna(subset=["category_code", "brand"])
+    df = df.withColumn("is_expensive", when(col("price") > 200, 1).otherwise(0))
+    df = df.withColumn("is_budget", when(col("price") < 50, 1).otherwise(0))
+    df = df.withColumn("is_mid_range", when((col("price") >= 50) & (col("price") <= 200), 1).otherwise(0))
+    df = df.withColumn("category_count", 
+                   col("contains_appliances").cast("int") + 
+                   col("contains_computers").cast("int") + 
+                   col("contains_electronics").cast("int") + 
+                   col("contains_kitchen").cast("int") + 
+                   col("contains_smartphone").cast("int"))
+    df = df.withColumn("is_purchase", when(col("event_type") == "purchase", 1).otherwise(0))
+    df = df.withColumn("is_view", when(col("event_type") == "view", 1).otherwise(0))
+    df = df.withColumn("is_cart", when(col("event_type") == "cart", 1).otherwise(0))
+    df = df.withColumn("price_range", 
+                   when(col("price") < 50, "budget")
+                   .when(col("price") < 150, "affordable")
+                   .when(col("price") < 300, "premium")
+                   .otherwise("luxury"))
+
+    # Создаем числовое представление для price_range
+    df = df.withColumn("price_range_numeric",
+                    when(col("price_range") == "budget", 1)
+                    .when(col("price_range") == "affordable", 2)
+                    .when(col("price_range") == "premium", 3)
+                    .otherwise(4))
+    return df
+\end{code}
