@@ -39,7 +39,7 @@ categorical_features = ["brand", "event_type",
 
 проводилось обучение модели.
 
-Из анализа были исключены признаки, не влияющие на целевую переменную или потенциально приводящие к переобучению: идентификаторы (\texttt{category\_id}, \texttt{event\_time}, \texttt{user\_id}, \texttt{user\_session}) (см. рис. \ref{fig:BrandCategoriesHist}-\ref{fig:ExampleDataAfterProcessing2}).
+Из анализа были исключены признаки, не влияющие на целевую переменную или потенциально приводящие к переобучению: идентификаторы (\texttt{category\_id}, \texttt{event\_time}, \texttt{user\_id}, \texttt{user\_session}) (см. рис. \ref{fig:ExampleData2}-\ref{fig:SchemeAfterProcessing2}).
 
 \begin{figure}[H]
     \centering
@@ -138,7 +138,7 @@ CrossValidator(estimator=pipeline,
 
 Процесс обучения реализовывался через конвейер, включающий этапы подготовки данных и модель LogisticRegression. Для начального варианта использовались параметры maxIter=100, regParam=0.01, elasticNetParam=0.0 и family="multinomial".
 
-Оптимизация гиперпараметров выполнялась с использованием 2-кратной кросс-валидации. Наилучшие результаты были достигнуты при maxIter=100, regParam=0.01, elasticNetParam=1.0 (см. рис. \ref{fig:MetricsLR}):
+Оптимизация гиперпараметров выполнялась с использованием 2-кратной кросс-валидации. Наилучшие результаты были достигнуты при maxIter=100, regParam=0.01, elasticNetParam=1.0 (см. рис. \ref{fig:BestLR}):
 
 \begin{code}
 param_grid = ParamGridBuilder() \
