@@ -1,44 +1,223 @@
 % Здесь пишется содержание приложений
 %
-\chapter{Обработка данных}
+\chapter{Исходный код обработки данных}
 \label{app:transform_data}\vspace{\baselineskip}
 
 \begin{code}
-def transform_dataframe(data: DataFrame) -> DataFrame:
+def transform_dataframe(data: DataFrame)-> DataFrame:
     df = df.select(
-        "event_type", "product_id", "category_id", "category_code", "brand", "price"
+        "event_type", "product_id", "category_id",
+        "category_code", "brand", "price"
     )
-    data = data.withColumn("category_id", col("category_id").cast("Integer"))
-    data = data.withColumn("product_id", col("product_id").cast("Integer"))
-    data = data.withColumn("price", col("price").cast("Float"))
-    # Преобразуем строку в массив строк
-    data = data.withColumn("category_code", 
-                            split(col("category_code"), r"\.")
-                          )
-    data = data.dropna(subset=["category_code", "brand"])
-    df = df.withColumn("is_expensive", when(col("price") > 200, 1).otherwise(0))
-    df = df.withColumn("is_budget", when(col("price") < 50, 1).otherwise(0))
-    df = df.withColumn("is_mid_range", when((col("price") >= 50) & (col("price") <= 200), 1).otherwise(0))
-    df = df.withColumn("category_count", 
-                   col("contains_appliances").cast("int") + 
-                   col("contains_computers").cast("int") + 
-                   col("contains_electronics").cast("int") + 
-                   col("contains_kitchen").cast("int") + 
-                   col("contains_smartphone").cast("int"))
-    df = df.withColumn("is_purchase", when(col("event_type") == "purchase", 1).otherwise(0))
-    df = df.withColumn("is_view", when(col("event_type") == "view", 1).otherwise(0))
-    df = df.withColumn("is_cart", when(col("event_type") == "cart", 1).otherwise(0))
-    df = df.withColumn("price_range", 
-                   when(col("price") < 50, "budget")
-                   .when(col("price") < 150, "affordable")
-                   .when(col("price") < 300, "premium")
-                   .otherwise("luxury"))
+    data = data.withColumn("category_id", col("category_id")
+        .cast("Integer"))
+    data = data.withColumn("product_id", col("product_id")
+        .cast("Integer"))
+    data = data.withColumn("price", col("price")
+        .cast("Float"))
 
-    # Создаем числовое представление для price_range
+    data = data.withColumn("category_code",
+                            split(col("category_code"), r"\.")
+    )
+    data = data.dropna(subset=["category_code", "brand"])
+    df = df.withColumn("is_expensive", when(col("price") > 200
+        , 1).otherwise(0))
+    df = df.withColumn("is_budget", when(col("price") < 50, 1)
+        .otherwise(0))
+    df = df.withColumn("is_mid_range", when((col("price")
+        >= 50) & (col("price") <= 200), 1).otherwise(0))
+    df = df.withColumn("category_count",
+                   col("contains_appliances").cast("int") +
+                   col("contains_computers").cast("int") +
+                   col("contains_electronics").cast("int") +
+                   col("contains_kitchen").cast("int") +
+                   col("contains_smartphone").cast("int"))
+    df = df.withColumn("is_purchase", when(col("event_type")
+        == "purchase", 1).otherwise(0))
+    df = df.withColumn("is_view", when(col("event_type")
+        == "view", 1).otherwise(0))
+    df = df.withColumn("is_cart", when(col("event_type")
+        == "cart", 1).otherwise(0))
+    df = df.withColumn("price_range",
+                    when(col("price") < 50, "budget")
+                    .when(col("price") < 150, "affordable")
+                    .when(col("price") < 300, "premium")
+                    .otherwise("luxury"))
+                 
     df = df.withColumn("price_range_numeric",
                     when(col("price_range") == "budget", 1)
-                    .when(col("price_range") == "affordable", 2)
+                    .when(col("price_range") == "affordable"
+                    , 2)
                     .when(col("price_range") == "premium", 3)
                     .otherwise(4))
     return df
+\end{code}
+
+
+\chapter{Исходный код гистограммы распределения}
+\label{app:hist}\vspace{\baselineskip}
+
+\begin{code}
+def plot_quant_distribution(data: DataFrame,
+                            column: str,
+                            num_bins: int = 200)-> None:
+    try:
+        min_value = data.selectExpr(f"min({column})")
+            .collect()[0][0]
+        max_value = data.selectExpr(f"max({column})")
+            .collect()[0][0]
+
+        print(f"￿ Диапазон значений {column}:
+            {min_value:.2f}- {max_value:.2f}")
+
+        bin_size = (max_value- min_value) / num_bins
+
+        data_with_bin = data.selectExpr(
+            "*",
+            f"floor(({column}- {min_value}) / {bin_size})
+                as bin"
+        ).filter(f"bin < {num_bins}")
+
+        bin_counts = data_with_bin.groupBy("bin").count()
+            .orderBy("bin")
+
+        bin_counts_list = bin_counts.collect()
+
+        bin_indices = []
+        bin_values = []
+
+        for row in bin_counts_list:
+            bin_indices.append(row['bin'])
+            bin_values.append(row['count'])
+        bin_centers = [min_value + (bin_idx + 0.5) * bin_size
+            for bin_idx in bin_indices]
+
+        plt.figure(figsize=(20, 6))
+        plt.bar(bin_centers, bin_values, width=bin_size * 0.8,
+                alpha=0.7, color='skyblue', edgecolor='navy',
+                linewidth=0.5)
+        plt.xlabel("Value", fontsize=20)
+        plt.ylabel("Count", fontsize=20)
+        plt.title(f"Распределение количественного
+            признака \"{column}\"")
+        plt.grid(True, alpha=0.3)
+
+        plt.gca().yaxis.set_major_formatter(
+            plt.FuncFormatter(lambda x, p: f'{x:,.0f}'))
+
+        plt.tight_layout()
+        plt.show()
+    except Exception as e:
+        print(f"￿ Ошибка при построении гистограммы: {e}")
+        import traceback
+        traceback.print_exc()
+\end{code}
+
+\chapter{Исходный код матрицы ошибок}
+\label{app:confusion_matrix}\vspace{\baselineskip}
+
+\begin{code}
+def plot_lr_training_metrics(cv_model, test_data,
+    label_col="label"):
+    test_predictions = cv_model.transform(test_data)
+
+    evaluator_accuracy = MulticlassClassificationEvaluator(
+        labelCol=label_col,
+        predictionCol="prediction",
+        metricName="accuracy"
+    )
+
+    evaluator_f1 = MulticlassClassificationEvaluator(
+        labelCol=label_col,
+        predictionCol="prediction",
+        metricName="f1"
+    )
+
+    test_accuracy = evaluator_accuracy
+        .evaluate(test_predictions)
+    test_f1 = evaluator_f1.evaluate(test_predictions)
+
+    print(f"Accuracy: {test_accuracy:.4f}")
+    print(f"F1-Score: {test_f1:.4f}")
+
+    from sklearn.metrics import confusion_matrix,
+        ConfusionMatrixDisplay
+
+    y_true = test_predictions.select(label_col)
+        .rdd.flatMap(lambda x: x).collect()
+    y_pred = test_predictions.select("prediction")
+        .rdd.flatMap(lambda x: x).collect()
+
+    cm = confusion_matrix(y_true, y_pred)
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
+
+    im = ax1.imshow(cm, cmap='Blues')
+    plt.colorbar(im, ax=ax1, fraction=0.046, pad=0.04)
+    ax1.set_title(f'Матрица ошибок: {test_accuracy:.4f}')
+    ax1.set_xlabel('Predicted')
+    ax1.set_ylabel('True')
+
+    ax2.bar(range(len(cm)), [cm[i, i] for i in range(len(cm))])
+    ax2.set_title('Правильные предсказания по классам')
+    ax2.set_xlabel('Класс')
+    ax2.set_ylabel('Количество')
+    ax2.grid(axis='y', alpha=0.3)
+
+    plt.tight_layout()
+    plt.show()
+
+    return test_predictions
+\end{code}
+
+\chapter{Исходный код распределения категориального признака}
+\label{app:hist_raspred}\vspace{\baselineskip}
+
+\begin{code}
+def plot_cat_distribution(data,
+                          column_name: str,
+                          top_n: int = 20)-> None:
+    column_type = dict(data.dtypes)[column_name]
+    if column_type == 'array<string>':
+        categories = (
+            data
+            .select(explode(col(column_name))
+            .alias(column_name))
+            .groupBy(column_name)
+            .count()
+            .orderBy("count", ascending=False)
+        )
+    else:
+        categories = (
+            data
+            .groupBy(column_name)
+            .count()
+            .orderBy("count", ascending=False)
+        )
+
+    total_categories = categories.count()
+    print(f"Количество категорий признака {column_name}:
+        {total_categories}")
+
+    categories_list = categories.limit(top_n).collect()
+
+    category_names = []
+    category_counts = []
+
+    for row in categories_list:
+        category_names.append(row[column_name])
+        category_counts.append(row['count'])
+
+    plt.figure(figsize=(12, 8))
+    plt.bar(category_names, category_counts)
+    plt.title(f"Barplot of \"{column_name}\"
+        counts (Top {top_n})")
+    plt.xlabel(column_name)
+    plt.ylabel("Count")
+    plt.xticks(rotation=45, ha='right')
+    plt.tight_layout()
+    plt.show()
+
+    if total_categories > top_n:
+        print(f"Показаны топ-{top_n}
+            категорий из {total_categories}")
 \end{code}

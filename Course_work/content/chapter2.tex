@@ -4,7 +4,7 @@
 
 \vspace{\baselineskip}
 
-В данной главе рассматриваются методы построения и оценки моделей машинного обучения в распределённой среде Apache Spark \cite{karau2015spark, damji2020learning, chambers2018spark, armbrust2015spark}. Работа включает решение двух задач: прогнозирования числовой оценки цены товара (регрессия) и классификации бюджетного сегмента продукта. Все вычисления выполнялись с использованием фреймворка Apache Spark и библиотеки Spark ML \cite{Tekdogan2022, kaggle2023dataset}, обеспечивающих обработку данных объёмом около трёх миллионов записей.
+В данной главе рассматриваются методы построения и оценки моделей машинного обучения в распределённой среде Apache Spark \cite{karau2015spark, damji2020learning, chambers2018spark, armbrust2015spark}. Работа включает решение двух задач: прогнозирования числовой оценки цены товара (регрессия) и классификации бюджетного класса продукта. Все вычисления выполнялись с использованием фреймворка Apache Spark и библиотеки Spark ML \cite{Tekdogan2022, kaggle2023dataset}, обеспечивающих обработку данных объёмом около трёх миллионов записей.
 
 \vspace{\baselineskip}
 
@@ -12,7 +12,7 @@
 \subsection{Постановка задачи регрессии}\vspace{\baselineskip}
 
 Необходимо построить модель GBT регрессии для предсказания цены продукта (price) на основе доступных признаков.
-Цель: найти нелинейную зависимость между признаками и целевой переменной, минимизируя ошибку предсказания. Качество модели оценивается метриками RMSE и R² на тестовой выборке. Модель должна объяснить, какие факторы влияют на цену товара и насколько сильно.
+Цель: найти нелинейную зависимость между признаками и целевой переменной, минимизируя ошибку предсказания. Требуется использовать RMSE и R² для оценки качества обучения модели. Модель должна объяснить, какие факторы влияют на цену товара и насколько сильно.
 
 В качестве признаков были выделены следующие группы:
 
@@ -37,7 +37,9 @@ categorical_features = ["brand", "event_type",
                         "price_range", "price_range_numeric"]
 \end{code}
 
-Из анализа были исключены признаки, не влияющие на целевую переменную или потенциально приводящие к переобучению: идентификаторы (\texttt{category\_id}, \texttt{event\_time}, \texttt{user\_id}, \texttt{user\_session}).
+проводилось обучение модели.
+
+Из анализа были исключены признаки, не влияющие на целевую переменную или потенциально приводящие к переобучению: идентификаторы (\texttt{category\_id}, \texttt{event\_time}, \texttt{user\_id}, \texttt{user\_session}) (см. рис. \ref{fig:BrandCategoriesHist}-\ref{fig:ExampleDataAfterProcessing2}).
 
 \begin{figure}[H]
     \centering
@@ -64,29 +66,51 @@ categorical_features = ["brand", "event_type",
 
 \vspace{\baselineskip}\subsection{Решение задачи регрессии}\vspace{\baselineskip}
 
-Построение модели линейной регрессии начиналось с подготовки данных: датасет загружался из HDFS в формате Parquet, после чего из него выделялся небольшой сэмпл для последующей потоковой обработки. Основная выборка разделялась на тренировочную и тестовую части в соотношении 80/20.
+Построение модели линейной регрессии начиналось с подготовки данных: датасет загружался из HDFS в формате Parquet, после чего из него выделялся небольшой сэмпл для последующей потоковой обработки. Основная выборка разделялась на тренировочную и тестовую части в соотношении 80/20 (см. рис. \ref{fig:DatasetSize}).
 
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=1\textwidth]{Content/Images/ML/DatasetLoad.png}
-    \caption{Процесс загрузки данных из HDFS}
-    \label{fig:DatasetLoad}
-\end{figure}
+\begin{code}
+spark.read.parquet("hdfs://namenode:9000/user/dchel/dchel_datab
+ase/eCommerce_clear_data")
+\end{code}
+
+\vspace{\baselineskip}
 
 Далее выполнялась предобработка признаков. Категориальные параметры преобразовывались с помощью StringIndexer. Все признаки объединялись в единый вектор посредством VectorAssembler.
 
 На основе этих этапов формировался конвейер Spark ML, включающий индексацию, кодирование, масштабирование признаков и модель GBT регрессии. Для неё использовались параметры maxIter=100, maxDepth=5, regParam=0.01.
 
-Оптимизация модели выполнялась с помощью 2-кратной кросс-валидации. Наилучшие результаты показала конфигурация с regParam=0.1, maxIter=100 и maxDepth=5, что соответствует комбинированной L1–L2 регуляризации.
+Оптимизация модели выполнялась с помощью 2-кратной кросс-валидации. Наилучшие результаты показала конфигурация с regParam=0.1, maxIter=100 и maxDepth=5 (см. рис. \ref{fig:BestGBT}).
+
+\begin{code}
+CrossValidator(estimator=pipeline,
+                estimatorParamMaps=param_grid,
+                evaluator=cv_evaluator,
+                numFolds=2,
+                parallelism=4)
+\end{code}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.7\textwidth]{Content/Images/ML/BestGBT.png}
+    \caption{Конфигурация лучшей GBT модели}
+    \label{fig:BestGBT}
+\end{figure}
 
 \vspace{\baselineskip}\subsection{Анализ полученных результатов регрессии}\vspace{\baselineskip}
 
-Модель была протестирована на отложенной тестовой выборке. Получены следующие значения метрик:
+Модель была протестирована на отложенной тестовой выборке. Получены следующие значения метрик (см. рис. \ref{fig:MetricsGBT}):
 
 \begin{itemize}
 \item RMSE = 65.9345;
 \item R² = 0.7862.
 \end{itemize}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.7\textwidth]{Content/Images/ML/MetricsGBT.png}
+    \caption{RMSE и R² метрики}
+    \label{fig:MetricsGBT}
+\end{figure}
 
 Высокое значение R² свидетельствует о сильной объясняющей способности модели.
 
@@ -95,17 +119,17 @@ categorical_features = ["brand", "event_type",
 \section{Задача классификации с использованием LogisticRegression}
 \subsection{Постановка задачи классификации}\vspace{\baselineskip}
 
-Вторая часть работы посвящена построению модели многоклассовой классификации, определяющей бюджетный сегмент (price\_range\_numeric). Целевой переменной является числовой индикатор бюджетной категории.
+Вторая часть работы посвящена построению модели многоклассовой классификации, определяющей бюджетный класс (price\_range\_numeric). Целевой переменной является числовой индикатор бюджетной категории.
 
-Требуется построить классификатор на основе Logistic Regression, предсказывающий бюджетный сегмент по доступным данным. Необходимо проанализировать работу модели на валидационной выборке, определить оптимальный порог принятия решения и представить модель, которая, гарантируя обнаружение не менее 60\% всех полезных отзывов (Recall ≥ 0.60), обеспечивает при этом наивысшую возможную долю верных предсказаний среди всех отмеченных как полезные (Precision).
+Требуется построить классификатор на основе Logistic Regression, предсказывающий бюджетный класс по доступным данным. Необходимо проанализировать работу модели на валидационной выборке, определить оптимальный порог принятия решения и представить модель, которая, гарантируя обнаружение не менее 60\% всех полезных отзывов (Recall ≥ 0.60), обеспечивает при этом наивысшую возможную долю верных предсказаний среди всех отмеченных как полезные (Precision).
 
 \vspace{\baselineskip}\subsection{Решение задачи классификации}\vspace{\baselineskip}
 
-В задаче классификации данные также загружались из HDFS. Потом разбивались на выборки (\ref{fig:DatasetSize}).
+В задаче классификации данные также загружались из HDFS. Потом производилось разделение тестовую и обучающую выборки (\ref{fig:DatasetSize}).
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.8\textwidth]{Content/Images/ML/DatasetSize.png}
+    \includegraphics[width=0.6\textwidth]{Content/Images/ML/DatasetSize.png}
     \caption{Объём выборок и кол-во экземпляров классов}
     \label{fig:DatasetSize}
 \end{figure}
@@ -114,15 +138,42 @@ categorical_features = ["brand", "event_type",
 
 Процесс обучения реализовывался через конвейер, включающий этапы подготовки данных и модель LogisticRegression. Для начального варианта использовались параметры maxIter=100, regParam=0.01, elasticNetParam=0.0 и family="multinomial".
 
-Оптимизация гиперпараметров выполнялась с использованием 2-кратной кросс-валидации. Наилучшие результаты были достигнуты при maxIter=100, regParam=0.01, elasticNetParam=1.0.
+Оптимизация гиперпараметров выполнялась с использованием 2-кратной кросс-валидации. Наилучшие результаты были достигнуты при maxIter=100, regParam=0.01, elasticNetParam=1.0 (см. рис. \ref{fig:MetricsLR}):
+
+\begin{code}
+param_grid = ParamGridBuilder() \
+    .addGrid(lr_model.regParam, [0.01, 0.1, 1.0]) \
+    .addGrid(lr_model.elasticNetParam, [0.0, 0.5, 1.0]) \
+    .addGrid(lr_model.maxIter, [10, 100]) \
+    .build()
+CrossValidator(estimator=pipeline,
+                estimatorParamMaps=param_grid,
+                evaluator=cv_evaluator,
+                numFolds=2,
+                parallelism=4)
+\end{code}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.7\textwidth]{Content/Images/ML/BestLR.png}
+    \caption{Конфигурация лучшей LR модели}
+    \label{fig:BestLR}
+\end{figure}
 
 \vspace{\baselineskip}
 \subsection{Анализ полученных результатов классификации}
 \vspace{\baselineskip}
 
-Модель классификации продемонстрировала стабильные результаты: точность (Precision) составила 0.97, полнота (Recall) — 0.969, F1-мера — 0.968, а общая точность классификации достигла 0.969.
+Модель классификации продемонстрировала стабильные результаты: точность (Precision) составила 0.97, полнота (Recall) — 0.968, F1-мера — 0.967, а общая точность классификации достигла 0.977 (см. рис. \ref{fig:MetricsLR}).
 
-Матрица ошибок для выбранного порога показывает следующие значения: более 12 000 объектов были корректно классифицированы, около 2 000 — некорректно (см. рис. \ref{fig:ConfusionMatrix}).
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{Content/Images/ML/MetricsLR.png}
+    \caption{Метрики LR модели}
+    \label{fig:MetricsLR}
+\end{figure}
+
+Матрица ошибок для выбранного порога показывает следующие значения: более 12 000 объектов были корректно классифицированы, около 2 000 — некорректно (см. рис. \ref{fig:ConfusionMatrix} и Приложение \ref{app:confusion_matrix}).
 
 \begin{figure}[H]
     \centering
@@ -131,7 +182,7 @@ categorical_features = ["brand", "event_type",
     \label{fig:ConfusionMatrix}
 \end{figure}
 
-График распределения кол-ва верно предсказанных классификаций показывает следующее:
+График распределения кол-ва верно предсказанных классификаций показывает следующее (см. Приложение \ref{app:hist_raspred}):
 
 \begin{figure}[H]
     \centering

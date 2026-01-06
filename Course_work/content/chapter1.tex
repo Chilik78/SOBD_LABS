@@ -5,7 +5,7 @@
 
 \section{Постановка задачи разведочного анализа}\vspace{\baselineskip}
 
-Разведочный анализ данных (Exploratory Data Analysis, EDA) является ключевым этапом при работе с большими данными \cite{karau2015spark, damji2020learning, koirala2020pyspark} и определяет качество последующих шагов — очистки, трансформации и моделирования. Целью данной главы является проведение комплексного EDA большого набора данных о книгах и пользовательских отзывах с использованием возможностей фреймворка Apache Spark.
+Задачей данной главы является проведение комплексного EDA большого набора данных о поведении пользователей электронной коммерции с использованием возможностей фреймворка Apache Spark.
 
 Для исследования применяются распределённые вычисления, что позволяет эффективно обрабатывать миллионы записей \cite{white2013hadoop, spark2022official} и анализировать данные в условиях ограничений по памяти и времени. Использование PySpark обеспечивает масштабируемость, а интеграция с HDFS — удобство работы с большими объёмами данных.
 
@@ -22,13 +22,9 @@
 
 Результатом данного этапа является построение целостного представления о данных и формирование корректной основы для дальнейших шагов анализа и моделирования.
 
-\vspace{\baselineskip}
-
 \section{Описание исходного датасета}\vspace{\baselineskip}
 
 В работе используется датасет <<eCommerce behavior data from multi category store>>, доступный на платформе Kaggle \cite{kaggle2023dataset}. Набор данных состоит из одного датасета — 2019-Nov.csv. В дальнейшем его название измениться на dataset.csv
-
-Совокупный объём данных составляет более 67 миллионов строк. Загруженные данные изначально имеют строковые типы, разнородные форматы идентификаторов и включают большое количество текстовых полей.
 
 Датафрейм включает следующие ключевые признаки (таблица \ref{tab:features}):
 
@@ -46,7 +42,7 @@
         \hline
         category\_id & Идентификатор категории продукта. \\
         \hline
-        category\_code & Таксономия категории товара (кодовое название), если это было возможно. Обычно указывается для значимых категорий и пропускается для различных видов аксессуаров. \\
+        category\_code & Таксономия категории товара (кодовое название). \\
         \hline
         brand & Строка с названием бренда. \\
         \hline
@@ -59,23 +55,45 @@
     \label{tab:features}
 \end{table}
 
+Совокупный объём данных составляет более 67 миллионов строк. Загруженные данные изначально имеют строковые типы и разнородные форматы идентификаторов (см. рис. \ref{fig:ExampleData1}). Чтение и демонстрация исходных данных производилось с помощью следующего кода:
+
+\begin{code}
+path = "hdfs://namenode:9000/user/dchel/dataset.csv"
+df = (spark.read.format("csv")
+      .option("header", "true")
+      .load(path)
+)
+df.show()
+\end{code}
+
+Данный фрагмент показывает, что:
+
+\begin{itemize}
+\item исходные данные находятся в HDFS;
+\item происходит чтение csv файла dataset.csv;
+\item происходит вывод первых 20 строк датафрейма в консоль.
+\end{itemize}
+
 \begin{figure}[H]
     \centering
-    \includegraphics[width=\textwidth]{Content/Images/Analyze/ExampleData.png}
+    \includegraphics[width=0.8\textwidth]{Content/Images/Analyze/ExampleData.png}
     \caption{Данные из датасета}
-    \label{fig:ExampleData}
+    \label{fig:ExampleData1}
 \end{figure}
 
-В ходе анализа полей датасета, с помощью команды \texttt{df.select()} были использованы следующие поля: \texttt{event\_type}, \texttt{product\_id}, \texttt{category\_id}, \texttt{category\_code}, \texttt{brand}, \texttt{price}.
+В ходе анализа полей датасета, с помощью команды \texttt{df.select(
+"event\_type", "product\_id", "category\_id", "category\_code
+", "brand", "price")} были выбраны следующие поля:  \texttt{event\_type},  \texttt{product\_id},  \texttt{category\_id},  \texttt{category\_code},  \texttt{brand}, \texttt{price} (см. рис. \ref{fig:ExampleDataSelect}).
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=\textwidth]{Content/Images/Analyze/ExampleDataAfterSelect.png}
+    \includegraphics[width=0.7\textwidth]{Content/Images/Analyze/ExampleDataAfterSelect.png}
     \caption{Данные из датасета после select}
-    \label{fig:ExampleData}
+    \label{fig:ExampleDataSelect}
 \end{figure}
 
-Структура данных была изучена с использованием команды \\ \texttt{df.printSchema()}, что позволило определить типы полей и выявить их потенциальную неоднородность. Так, поля \texttt{event\_type}, \texttt{product\_id}, \texttt{category\_id}, \texttt{category\_code}, \texttt{brand}, \texttt{price} и текстовые поля загружаются как строки, что указывает на возможное наличие разнородных форматов данных. Структура представлена на рисунке \ref{fig:DataFrameScheme}.
+Структура данных была изучена с использованием команды \texttt{df.printSc
+hema()}, что позволило определить типы полей и выявить их потенциальную неоднородность. Так, поля \texttt{event\_type}, \texttt{product\_id}, \texttt{category\_id}, \texttt{category\_code}, \texttt{brand}, \texttt{price} и текстовые поля загружаются как строки, что указывает на возможное наличие разнородных форматов данных. Структура представлена на рисунке (см. рис. \ref{fig:DataFrameScheme}).
 
 \begin{figure}[htbp]
     \centering
@@ -84,11 +102,19 @@
     \label{fig:DataFrameScheme}
 \end{figure}
 
-Более детальное изучение содержимого выполнялось уже на этапе разведочного анализа при помощи выборочного просмотра записей \texttt{df.show()}, анализа уникальных значений и регулярных выражений. Эти методы позволили установить, что:
+Более детальное изучение содержимого выполнялось уже на этапе разведочного анализа при помощи выборочного просмотра записей df.show() (см. рис. \ref{fig:ExampleDataAfterShow}), анализа уникальных значений и регулярных выражений.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{Content/Images/Analyze/ExampleDataAfterShow.png}
+    \caption{Выборочный просмотра записей}
+    \label{fig:ExampleDataAfterShow}
+\end{figure}
+
+Эти методы позволили установить, что:
 
 \begin{itemize}
 \item числовые идентификаторы различной длины (от 6 до 8 цифр);
-\item category\_id имеет длинные числовые идентификаторы (19-20 цифр);
 \item только одно значение view во всех строках выборки;
 \item множество значений NULL;
 \item значительный разброс цен (от бюджетных товаров до премиальных);
@@ -97,19 +123,12 @@
 
 Параметры Spark-сессии были настроены с учётом объёма данных \cite{karau2015spark, damji2020learning}: увеличены объёмы памяти драйвера и исполнителей. Это обеспечивает стабильную работу при чтении и трансформации больших датафреймов. На рисунке \ref{fig:SparkSession} показана конфигурация SparkSession.
 
-В конфиге, указанном ниже, последние строчки указывают на то, что используется hadoop:
+В конфиге, указанном ниже, последние строчки указывают на то, что используется spark:
 
 \begin{code}
-def create_spark_configuration() -> SparkConf:
-    """
-    Создает и конфигурирует экземпляр SparkConf для приложения Spark.
-
-    Returns:
-        SparkConf: Настроенный экземпляр SparkConf.
-    """
-    # Получаем имя пользователя
+def create_spark_configuration()-> SparkConf:
     user_name = "dchel"
-    
+
     conf = SparkConf()
     conf.setAppName("Lab 1")
     conf.setMaster("local[*]")
@@ -119,9 +138,12 @@ def create_spark_configuration() -> SparkConf:
     conf.set("spark.executor.instances", "2")
     conf.set("spark.driver.memory", "4g")
     conf.set("spark.driver.cores", "2")
-    conf.set("spark.sql.catalog.spark_catalog.type", "hadoop")
-    conf.set("spark.sql.catalog.spark_catalog.warehouse", f"hdfs:///user/{user_name}")
-    conf.set("spark.sql.catalog.spark_catalog.io-impl", "org.apache.iceberg.hadoop.HadoopFileIO")
+    conf.set("spark.sql.catalog.spark_catalog.type",
+    "hadoop")
+    conf.set("spark.sql.catalog.spark_catalog.warehouse",
+    f"hdfs:///user/{user_name}")
+    conf.set("spark.sql.catalog.spark_catalog.io-impl",
+    "org.apache.iceberg.hadoop.HadoopFileIO")
 
     return conf
 \end{code}
@@ -146,12 +168,30 @@ def create_spark_configuration() -> SparkConf:
 
 \section{Определение пропущенных значений и преобразование данных}\vspace{\baselineskip}
 
-Анализ полноты данных показал наличие пропусков в ряде столбцов, преимущественно в текстовых полях. Для оценки количества пропусков была использована служебная функция, выполняющая подсчёт \texttt{NULL}-значений в каждом столбце.
+Анализ полноты данных показал наличие пропусков в ряде столбцов, преимущественно в числовых полях. Для оценки количества пропусков была использована служебная функция, выполняющая подсчёт NULL-значений:
+
+\begin{code}
+def count_nulls(data: DataFrame,
+                column_name: str)-> None:
+    null_counts = data.select(
+    sum(col(column_name).isNull().cast("int"))
+    ).collect()[0][0]
+
+    not_null_counts = data.select(
+        sum(col(column_name).isNotNull().cast("int"))
+    ).collect()[0][0]
+
+    print(f"Число колонок с NULL: {null_counts} "
+          f"({100 * null_counts / (null_counts +
+          not_null_counts):.2f}%)")
+\end{code}
 
 Были применены следующие стратегии:
 
 \begin{itemize}
-\item удалены строки содержащие \texttt{NULL}-значения в столбцах \texttt{category\_code} и \texttt{brand};
+\item удалены строки содержащие \texttt{NULL}-значения в столбцах \texttt{category\_co
+de} и \texttt{brand} командой \texttt{data.dropna(subset=["category\_code
+", "brand"])};
 \item текстовый столбец \texttt{category\_id} был удален с помощью команды \texttt{df.drop("category\_id")}.
 \end{itemize}
 
@@ -167,13 +207,15 @@ def create_spark_configuration() -> SparkConf:
 
 \begin{itemize}
 \item массив кодов категорий, полученный путём разбиения строки с использованием \texttt{split};
-\item признак содержания вида продукта \texttt{contains\_appliances}, \texttt{contains\_computers}, \texttt{contains\_electronics}, \texttt{contains\_kitchen}, \texttt{contains\_smartphone};
+\item признак содержания вида продукта \texttt{contains\_appliances}, \texttt{contains\_computers}, \texttt{contains\_electronics}, \texttt{contains\_ki
+tchen}, \texttt{contains\_smartphone};
 \item булевый признак дороговизны продукта \texttt{is\_expensive};
 \item булевый признак бюджетного продукта \texttt{is\_budget};
 \item булевый признак среднебюджетного продукта \texttt{is\_mid\_range};
 \item кол-во категорий, которые охватывают продукт \texttt{category\_count};
 \item булевый признак просмотра продукта \texttt{is\_view};
 \item булевый признак добавление продукта в корзину \texttt{is\_cart};
+\vspace{\baselineskip}
 \item булевый признак покупки продукта \texttt{is\_purchase};
 \item класс продукта \texttt{price\_range};
 \item класс продукта в численном формате \texttt{price\_range\_numeric}.
@@ -195,25 +237,26 @@ def create_spark_configuration() -> SparkConf:
     \label{fig:ExampleDataAfterProcessing}
 \end{figure}
 
-Все преобразования были объединены в функцию, позволяющую повторно применять трансформации к датафрейму. См. Приложение \ref{app:transform_data}.
+Все преобразования были объединены в функцию, позволяющую повторно применять трансформации к датафрейму. Фрагмент кода вынесен в Приложение \ref{app:transform_data}.
 
 
 \vspace{\baselineskip}
 
 \section{Анализ распределений, выбросов и категориальных признаков}\vspace{\baselineskip}
 
-Для количественного признака \texttt{price}, была построена гистограмма с использованием Spark и последующей визуализацией в библиотеках Seaborn и Matplotlib.
+Для количественного признака \texttt{price}, была построена гистограмма с использованием Spark и последующей визуализацией в библиотеках Seaborn и Matplotlib (см. Приложение \ref{app:hist}).
+\vspace{\baselineskip}
 
 Полученные результаты показывают:
 
 \begin{itemize}
-\item оценки пользователей смещены в сторону высоких значений (мода 4–5) (\ref{fig:PriceField});
-\item коэффициент полезности характеризуется бимодальным распределением, что отражает различия между отзывами без оценивания полезности и отзывами с активным пользовательским голосованием (\ref{fig:HelpfulnessRatioGist}).
+\item cтоимость продуктов пользователей смещена в сторону невысоких значений (мода 125–150)  (см. рис. \ref{fig:PriceField});
+\item коэффициент полезности характеризуется бимодальным распределением, что отражает различия между поведениями пользователей (см. рис. \ref{fig:PriceField}).
 \end{itemize}
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=1.05\textwidth]{Content/Images/Analyze/PriceField.png}
+    \includegraphics[width=1.02\textwidth]{Content/Images/Analyze/PriceField.png}
     \caption{Гистограмма распределения для price}
     \label{fig:PriceField}
 \end{figure}
@@ -229,12 +272,12 @@ def create_spark_configuration() -> SparkConf:
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=1\textwidth]{Content/Images/Analyze/PriceAnomaly2.png}
+    \includegraphics[width=0.6\textwidth]{Content/Images/Analyze/PriceAnomaly2.png}
     \caption{Расчетные значения у price}
     \label{fig:PriceAnomaly2}
 \end{figure}
 
-Для категориальных признаков \texttt{category\_code}, \texttt{brand} были проанализированы частоты встречаемости. Самым популярным значением:
+Для категориальных признаков \texttt{category\_code}, \texttt{brand} были проанализированы частоты встречаемости. Самым популярным значением для поля:
 \begin{itemize}
 \item \texttt{brand} стало samsung (рис. \ref{fig:BrandCategoriesHist});
 \item \texttt{category\_code} стало electronics (рис. \ref{fig:CategoryCodeHist}).
@@ -242,19 +285,19 @@ def create_spark_configuration() -> SparkConf:
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=1\textwidth]{Content/Images/Analyze/BrandCategoriesHist.png}
+    \includegraphics[width=0.85\textwidth]{Content/Images/Analyze/BrandCategoriesHist.png}
     \caption{Частоты для brand}
     \label{fig:BrandCategoriesHist}
 \end{figure}
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=1\textwidth]{Content/Images/Analyze/CategoryCodeHist.png}
+    \includegraphics[width=0.85\textwidth]{Content/Images/Analyze/CategoryCodeHist.png}
     \caption{Частоты для category\_code}
     \label{fig:CategoryCodeHist}
 \end{figure}
 
-Проверка дубликатов показала, что некоторые товары имеют повторяющиеся записи — это связано с тем, что каждая запись соответствует отдельному пользовательскому действию. Такие дубликаты являются ожидаемыми и отражают структуру исходного набора данных. Поэтому для всего датасета была проведена дедубликация по \texttt{product\_id}, \texttt{event\_type} и \texttt{price} полям.
+Проверка дубликатов показала, что некоторые товары имеют повторяющиеся записи — это связано с тем, что каждая запись соответствует отдельному пользовательскому действию. Такие дубликаты являются ожидаемыми и отражают структуру исходного набора данных. Поэтому для всего датасета была проведена дедубликация по \texttt{product\_id}, \texttt{event\_type} и \texttt{price} полям командой \texttt{df.dropDuplicates(["product\_id", "event\_type", "price"])}.
 
 \vspace{\baselineskip}
 
