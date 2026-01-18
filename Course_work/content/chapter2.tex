@@ -11,10 +11,12 @@
 \section{Задача регрессии}
 \subsection{Постановка задачи регрессии}\vspace{\baselineskip}
 
-Необходимо построить модель GBT регрессии для предсказания цены продукта (price) на основе доступных признаков.
+Необходимо построить модель GBT регрессии для предсказания цены продукта (price) на основе раннее рассмотренного датасета.
 Цель: найти нелинейную зависимость между признаками и целевой переменной, минимизируя ошибку предсказания. Требуется использовать RMSE и R² для оценки качества обучения модели. Модель должна объяснить, какие факторы влияют на цену товара и насколько сильно.
 
-В качестве признаков были выделены следующие группы:
+\vspace{\baselineskip}\subsection{Решение задачи регрессии}\vspace{\baselineskip}
+
+Были выделены следующие признаки:
 
 \begin{code}
 binary_features = [
@@ -36,8 +38,6 @@ numeric_features = ["category_count"]
 categorical_features = ["brand", "event_type", 
                         "price_range", "price_range_numeric"]
 \end{code}
-
-проводилось обучение модели.
 
 Из анализа были исключены признаки, не влияющие на целевую переменную или потенциально приводящие к переобучению: идентификаторы (\texttt{category\_id}, \texttt{event\_time}, \texttt{user\_id}, \texttt{user\_session}) (см. рис. \ref{fig:ExampleData2}-\ref{fig:SchemeAfterProcessing2}).
 
@@ -64,20 +64,38 @@ categorical_features = ["brand", "event_type",
 
 Для оценки качества модели использовались метрики RMSE (Root Mean Square Error) и R² (коэффициент детерминации).
 
-\vspace{\baselineskip}\subsection{Решение задачи регрессии}\vspace{\baselineskip}
-
-Построение модели линейной регрессии начиналось с подготовки данных: датасет загружался из HDFS в формате Parquet, после чего из него выделялся небольшой сэмпл для последующей потоковой обработки. Основная выборка разделялась на тренировочную и тестовую части в соотношении 80/20 (см. рис. \ref{fig:DatasetSize}).
+Построение модели GBT регрессии начиналось с подготовки данных: датасет загружался из HDFS в формате Parquet, после чего из него выделялся небольшой сэмпл для последующей обработки. Основная выборка разделялась на тренировочную и тестовую части в соотношении 80/20 (см. рис. \ref{fig:DatasetSize}).
 
 \begin{code}
 spark.read.parquet("hdfs://namenode:9000/user/dchel/dchel_datab
 ase/eCommerce_clear_data")
 \end{code}
 
-\vspace{\baselineskip}
+Далее выполнялась предобработка признаков. Категориальные параметры преобразовывались с помощью StringIndexer. Все признаки объединялись в единый вектор посредством VectorAssembler:
 
-Далее выполнялась предобработка признаков. Категориальные параметры преобразовывались с помощью StringIndexer. Все признаки объединялись в единый вектор посредством VectorAssembler.
+\begin{code}
+stages = []
+if categorical_features:
+    indexed_categorical_features = [f"{feature}_index" 
+        for feature in categorical_features]
+    string_indexer = StringIndexer(
+        inputCols=categorical_features,
+        outputCols=indexed_categorical_features,
+        handleInvalid="keep",
+        stringOrderType="frequencyDesc")
+    stages.append(string_indexer)
+vector_num_assembler = VectorAssembler(
+    inputCols=numeric_features,
+    outputCol="numeric_vector")
+stages.append(vector_num_assembler)
+feature_cols = ["numeric_vector"] + binary_features
+vector_all_assembler = VectorAssembler(
+    inputCols=feature_cols,
+    outputCol="features")
+stages.append(vector_all_assembler)
+\end{code}
 
-На основе этих этапов формировался конвейер Spark ML, включающий индексацию, кодирование, масштабирование признаков и модель GBT регрессии. Для неё использовались параметры maxIter=100, maxDepth=5, regParam=0.01.
+На основе этих этапов формировался конвейер Spark ML, включающий индексацию, кодирование признаков и модель GBT регрессии. Для неё использовались параметры maxIter=100, maxDepth=5, regParam=0.01.
 
 Оптимизация модели выполнялась с помощью 2-кратной кросс-валидации. Наилучшие результаты показала конфигурация с regParam=0.1, maxIter=100 и maxDepth=5 (см. рис. \ref{fig:BestGBT}).
 
@@ -105,6 +123,26 @@ CrossValidator(estimator=pipeline,
 \item R² = 0.7862.
 \end{itemize}
 
+
+\begin{code}
+def plot_gbt_training_metrics(cv_model: CrossValidatorModel, 
+    test_data: DataFrame) -> None:
+    test_predictions = cv_model.transform(test_data)
+    rmse_evaluator = RegressionEvaluator(labelCol=label_col, 
+                                    predictionCol="prediction", 
+                                    metricName="rmse")
+    r2_evaluator = RegressionEvaluator(labelCol=label_col, 
+                                    predictionCol="prediction", 
+                                    metricName="r2")
+    test_rmse = rmse_evaluator.evaluate(test_predictions)
+    test_r2 = r2_evaluator.evaluate(test_predictions)
+    print("МЕТРИКИ GBTRegressor НА ТЕСТОВОЙ ВЫБОРКЕ:")
+    print(f"RMSE: {test_rmse:.4f}")
+    print(f"R²: {test_r2:.4f}")
+plot_gbt_training_metrics(cv_model, test_df)
+\end{code}
+
+
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.7\textwidth]{Content/Images/ML/MetricsGBT.png}
@@ -119,11 +157,12 @@ CrossValidator(estimator=pipeline,
 \section{Задача классификации с использованием LogisticRegression}
 \subsection{Постановка задачи классификации}\vspace{\baselineskip}
 
-Вторая часть работы посвящена построению модели многоклассовой классификации, определяющей бюджетный класс (price\_range\_numeric). Целевой переменной является числовой индикатор бюджетной категории.
+Вторая часть работы посвящена построению модели многоклассовой классификации, определяющей бюджетный класс (price\_range\_numeric). Целевой переменной является числовой индикатор бюджетной категории товара.
 
-Требуется построить классификатор на основе Logistic Regression, предсказывающий бюджетный класс по доступным данным. Необходимо проанализировать работу модели на валидационной выборке, определить оптимальный порог принятия решения и представить модель, которая, гарантируя обнаружение не менее 60\% всех полезных отзывов (Recall ≥ 0.60), обеспечивает при этом наивысшую возможную долю верных предсказаний среди всех отмеченных как полезные (Precision).
+Требуется построить классификатор на основе Logistic Regression, предсказывающий бюджетный класс по доступным данным. Необходимо проанализировать работу модели на валидационной выборке и представить модель, которая будет гарантировать обнаружение не менее 60\% всех бюджетных категорий (Recall ≥ 0.60), обеспечивая прогностическую способность (Precision) не менее 70\%.
 
-\vspace{\baselineskip}\subsection{Решение задачи классификации}\vspace{\baselineskip}
+\vspace{\baselineskip}
+\subsection{Решение задачи классификации}\vspace{\baselineskip}
 
 В задаче классификации данные также загружались из HDFS. Потом производилось разделение тестовую и обучающую выборки (\ref{fig:DatasetSize}).
 
@@ -134,9 +173,64 @@ CrossValidator(estimator=pipeline,
     \label{fig:DatasetSize}
 \end{figure}
 
-На этапе предобработки категориальные признаки преобразовывались с помощью StringIndexer, после чего все признаки объединялись в общий вектор, необходимый для обучения модели. Нормализация числовых признаков проводилась с помощью StandardScaler.
+На этапе предобработки категориальные признаки преобразовывались с помощью StringIndexer и OneHotEncoder, после чего все признаки объединялись в общий вектор, необходимый для обучения модели. Нормализация числовых признаков проводилась с помощью StandardScaler.
 
-Процесс обучения реализовывался через конвейер, включающий этапы подготовки данных и модель LogisticRegression. Для начального варианта использовались параметры maxIter=100, regParam=0.01, elasticNetParam=0.0 и family="multinomial".
+Предобработка категориальных признаков выполнялась в следующем фрагменте:
+\begin{code} 
+    stages = []
+    if categorical_features:
+        indexed_categorical_features = [f"{feature}_index" 
+            for feature in categorical_features]
+        string_indexer = StringIndexer(
+            inputCols=categorical_features,
+            outputCols=indexed_categorical_features,
+            handleInvalid="keep")
+        stages.append(string_indexer)
+        onehot_categorical_features = [f"{feature}_encoded" 
+            for feature in categorical_features]
+        onehot_encoder = OneHotEncoder(
+            inputCols=indexed_categorical_features,
+            outputCols=onehot_categorical_features,
+            dropLast=True
+        )
+        stages.append(onehot_encoder)
+\end{code}
+
+Предобработка числовых признаков с объединением в вектор выполнялась в следующем фрагменте:
+\begin{code} 
+    vector_num_assembler = VectorAssembler(
+        inputCols=numeric_features,
+        outputCol="numeric_vector")
+    stages.append(vector_num_assembler)
+    numeric_scaler = StandardScaler(
+        inputCol="numeric_vector",
+        outputCol="numeric_vector_scaled",
+        withStd=True,
+        withMean=True)
+    stages.append(numeric_scaler)
+    feature_cols = ["numeric_vector_scaled"] + binary_features
+    if categorical_features:
+        feature_cols.extend(onehot_categorical_features)
+    vector_all_assembler = VectorAssembler(
+        inputCols=feature_cols,
+        outputCol="features")
+    stages.append(vector_all_assembler)
+\end{code}
+
+Процесс обучения реализовывался через конвейер, включающий этапы подготовки данных и модель LogisticRegression. Для начального варианта использовались параметры maxIter=100, regParam=0.01, elasticNetParam=0.01 и family="multinomial".
+
+\begin{code}
+LogisticRegression(featuresCol="features",
+            labelCol=label_col,
+            predictionCol="prediction",
+            rawPredictionCol="rawPrediction",
+            probabilityCol="probability",
+            maxIter=100,
+            regParam=0.01,
+            elasticNetParam=0.0,
+            family="multinomial",
+            standardization=False)
+\end{code}
 
 Оптимизация гиперпараметров выполнялась с использованием 2-кратной кросс-валидации. Наилучшие результаты были достигнуты при maxIter=100, regParam=0.01, elasticNetParam=1.0 (см. рис. \ref{fig:BestLR}):
 
@@ -164,7 +258,28 @@ CrossValidator(estimator=pipeline,
 \subsection{Анализ полученных результатов классификации}
 \vspace{\baselineskip}
 
-Модель классификации продемонстрировала стабильные результаты: точность (Precision) составила 0.97, полнота (Recall) — 0.968, F1-мера — 0.967, а общая точность классификации достигла 0.977 (см. рис. \ref{fig:MetricsLR}).
+Модель классификации продемонстрировала стабильные результаты: точность (Precision) составила 0.97, полнота (Recall) — 0.968, F1-мера — 0.967, а общая точность классификации достигла 0.967 (см. рис. \ref{fig:MetricsLR}).
+
+\begin{code} 
+evaluators = {
+    "accuracy": MulticlassClassificationEvaluator(
+        labelCol=label_col, predictionCol="prediction",
+        metricName="accuracy"
+    ),
+    "weightedPrecision": MulticlassClassificationEvaluator(
+        labelCol=label_col, predictionCol="prediction",
+        metricName="weightedPrecision"
+    ),
+    "weightedRecall": MulticlassClassificationEvaluator(
+        labelCol=label_col, predictionCol="prediction",
+        metricName="weightedRecall"
+    ),
+    "f1": MulticlassClassificationEvaluator(
+        labelCol=label_col, predictionCol="prediction",
+        metricName="f1"
+    )
+}
+\end{code}
 
 \begin{figure}[H]
     \centering
@@ -173,7 +288,16 @@ CrossValidator(estimator=pipeline,
     \label{fig:MetricsLR}
 \end{figure}
 
-Матрица ошибок для выбранного порога показывает следующие значения: более 12 000 объектов были корректно классифицированы, около 2 000 — некорректно (см. рис. \ref{fig:ConfusionMatrix} и Приложение \ref{app:confusion_matrix}).
+Матрица ошибок для выбранных гиперпараметров показывает следующие значения: более 12 000 объектов были корректно классифицированы, около 2 000 — некорректно (см. рис. \ref{fig:ConfusionMatrix}). Функция построения данного графика представлена в Приложении \ref{app:confusion_matrix}.
+
+Расчет данных для построения графика происходить в следующем фрагменте кода:
+\begin{code} 
+y_true = test_predictions.select(label_col).rdd
+    .flatMap(lambda x: x).collect()
+y_pred = test_predictions.select("prediction").rdd
+    .flatMap(lambda x: x).collect()
+\end{code}
+
 
 \begin{figure}[H]
     \centering
@@ -182,17 +306,24 @@ CrossValidator(estimator=pipeline,
     \label{fig:ConfusionMatrix}
 \end{figure}
 
-График распределения кол-ва верно предсказанных классификаций показывает следующее (см. Приложение \ref{app:hist_raspred}):
+График распределения кол-ва верно предсказанных классификаций (см. рис. \ref{fig:PredictHist}) показывает, что больше всего был предсказан 1 бюджетный класс.
+
+Функция построения данного графика представлена в Приложении \ref{app:hist_raspred}. Расчет данных для построения графика происходить в следующем фрагменте кода:
+\begin{code} 
+from sklearn.metrics import confusion_matrix
+cm = confusion_matrix(y_true, y_pred)
+data = range(len(cm)), [cm[i, i] for i in range(len(cm))]
+\end{code}
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.8\textwidth]{Content/Images/ML/PredictHist.png}
+    \includegraphics[width=0.75\textwidth]{Content/Images/ML/PredictHist.png}
     \caption{Кол-во верно предсказанных классификаций}
     \label{fig:PredictHist}
 \end{figure}
 
 \vspace{\baselineskip}\section{Выводы}\vspace{\baselineskip}
 
-В рамках работы были решены две задачи машинного обучения. GBT регрессия показала эффективность: значение R² (0.78) подтверждает, что признаков достаточно для точного прогнозирования цены продуктов. Задача классификации оказалась более успешной: модель достигла accurancy = 0.96, F1 = 0.96 и выполнила требуемый уровень полноты (Recall ≥ 60\%).
+В рамках работы были решены две задачи машинного обучения. GBT регрессия показала эффективность: значение R² (0.78) подтверждает, что признаков достаточно для точного прогнозирования цены продуктов. Задача классификации оказалась более успешной: модель достигла accurancy = 0.967, F1 = 0.97 и выполнила требуемый уровень полноты (Recall ≥ 60\%).
 
-В перспективе дальнейшее развитие связано с использованием текстовых признаков \cite{zaharia2021lakehouse} (TF-IDF, Word2Vec, BERT), внедрением нейронных сетей и современных ансамблей, а также сокращением размерности категориальных признаков. Полученные результаты демонстрируют эффективность Spark ML при анализе продуктов электронной коммерции в условиях больших данных.
+Полученные результаты демонстрируют эффективность Spark ML при анализе продуктов электронной коммерции в условиях больших данных.

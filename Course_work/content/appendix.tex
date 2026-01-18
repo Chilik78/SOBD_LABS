@@ -113,6 +113,85 @@ def plot_quant_distribution(data: DataFrame,
         traceback.print_exc()
 \end{code}
 
+\chapter{Исходный код ящика с усами}
+\label{app:plot_boxplots}\vspace{\baselineskip}
+
+\begin{code}
+def plot_boxplots(data: DataFrame,
+                  columns: list[str],
+                  sample_fraction: float = 0.1) -> None:
+    box_data = []
+
+    for column in columns:
+        quantiles = data.approxQuantile(column, [0.25, 0.5, 
+            0.75], 0.01)
+        q1, median, q3 = quantiles
+
+        iqr = q3 - q1
+        lower_bound = q1 - 1.5 * iqr
+        upper_bound = q3 + 1.5 * iqr
+
+        filtered_df = data.filter((col(column) >= lower_bound) 
+            & (col(column) <= upper_bound))
+        outliers_df = data.filter((col(column) < lower_bound) 
+            | (col(column) > upper_bound))
+
+        min_value = data.agg({column: "min"}).collect()[0][0]
+        mean_value = data.agg({column: "mean"}).collect()[0][0]
+        std_value = data.agg({column: "std"}).collect()[0][0]
+        max_value = data.agg({column: "max"}).collect()[0][0]
+
+        lower_bound = max(lower_bound, min_value)
+        upper_bound = min(upper_bound, max_value)
+
+        outliers = []
+        if not outliers_df.isEmpty():
+            sampled_outliers_df = outliers_df.sample(
+                sample_fraction)
+            outliers = (
+                sampled_outliers_df
+                .select(column)
+                .limit(1000)
+                .collect()
+            )
+            outliers = [row[column] for row in outliers]
+            
+            if min_value < lower_bound and min_value 
+                not in outliers:
+                outliers.append(min_value)
+            if max_value > upper_bound and max_value 
+                not in outliers:
+                outliers.append(max_value)
+
+        box_data.append({
+            'whislo': lower_bound,
+            'q1': q1,
+            'med': median,
+            'q3': q3,
+            'whishi': upper_bound,
+            'fliers': outliers
+        })
+    
+    print(f"Минимальное значение:          {min_value:.2f}")
+    print(f"Среднее значение:              {mean_value:.2f}")
+    print(f"Среднеквадратичное отклонение: {std_value:.2f}")
+    print(f"Первый квартиль:               {q1:.2f}")
+    print(f"Медиана:                       {median:.2f}")
+    print(f"Третий квартиль:               {q3:.2f}")
+    print(f"Максимальное значение:         {max_value:.2f}")
+        
+    fig, ax = plt.subplots(figsize=(20, 6))
+    ax.bxp(box_data, 
+           vert=False, 
+           positions=range(1, len(columns) + 1), widths=0.5)
+    ax.set_yticks(range(1, len(columns) + 1))
+    ax.set_yticklabels(columns)
+    ax.set_xlabel('Value')
+    ax.set_title('Boxplots')
+    ax.grid(True)
+    plt.show()
+\end{code}
+
 \chapter{Исходный код матрицы ошибок}
 \label{app:confusion_matrix}\vspace{\baselineskip}
 
